@@ -53,9 +53,6 @@ library(rnaturalearth)
 
 
 # Define desired extent
-## We are going to use North America as our desired extent
-NorthAmerica <- rgdal::readOGR("NA_Data/TerrestrialEcoregions_L1_Shapefile_NA_Terrestrial_Ecoregions_LI_data_terrestrial_Ecoregions_updated_terrestrial_Ecoregions_updated.shp")
-
 ## Before cropping our layers we will also explore a spatial shape of our points
 ## this shape will use the geographic points used for Maxent and 
 # this will allow for a smaller area for the climatic layers to be cropped onto 
