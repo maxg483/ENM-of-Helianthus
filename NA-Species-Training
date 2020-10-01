@@ -1,0 +1,201 @@
+##Species Training Layers
+### Original script by ML Gaynor
+## Adapted script by Max Gebhart
+
+library(dplyr)
+library(tidyr)
+library(rjson)  
+library(RCurl) 
+library(raster)
+library(sp)
+library(ggplot2)
+library(grDevices)
+library(tidyverse)
+library(raster)
+library(rgeos)
+library(rgdal)
+library(sp)
+
+# Read csv
+helianthus_points <- read.csv("NA_data/OccurrenceData/Cleaned/Helianthus Reduced.csv")
+debilis_points <- read.csv("NA_data/OccurrenceData/Cleaned/Debilis/readyDebilis.csv")
+
+# fix species column 
+helianthus_points$Species <- gsub(" ", "_", helianthus_points$Species)
+list <- unique(helianthus_points$Species)
+
+debilis_points$Species <- gsub(" ", "_", debilis_points$Species)
+deblist <- unique(debilis_points$Species)
+
+# Read in a raster
+alte <- getData('CMIP5', var='tmin', res=10, rcp=85, model='AC', year=70)
+alte <- alte[[1]]
+## Crop to decrease processing time
+e <- extent(-180, -40, 0, 90)
+alte <- crop(alte, e)
+
+# Loop through all species
+## Set up empty list
+namelist <- c()
+arealist <- c()
+numberofpoints <- c()
+bufferarealist <- c()
+
+## Set up final file location
+folder <- "NA_data/Climate Data/PresentLayers/buffer10percent/"
+end <- ".asc"
+
+## Function to convert the area to degrees for buffer construction
+convert_to_degrees <- function(area_m){
+  area_degree <- area_m/111
+  return(area_degree)
+}
+
+## For loop
+for (i in 1:48){
+  namelist[i] <- list[[i]]
+  name <- list[[i]]
+  df <- helianthus_points %>%
+    filter(Species == name)
+  numberofpoints[i] <- nrow(df)
+  pts <- SpatialPoints(df[,2:3])
+  hull <- gConvexHull(pts)
+  area <- gArea(hull)
+  arealist[i] <- area
+  bwidth <- area*.10
+  bwidth <- convert_to_degrees(bwidth)
+  buffer <- gBuffer(hull, width = bwidth)
+  bufferarealist[i] <- gArea(buffer)
+  m <- mask(alte, buffer)
+  c <- crop(m, buffer)
+  fileA <- paste(folder, name, sep="")
+  fileB <- paste(fileA, end, sep="")
+  writeRaster(c, fileB, format = "ascii")
+}
+
+## This is the function that will specifically make a buffer for a given species
+scalingbuffer_training <- function(df, stack){
+  pts <- SpatialPoints(df[,2:3])
+  hull <- gConvexHull(pts)
+  area <- gArea(hull)
+  bwidth <- area*.10
+  bwidth <- convert_to_degrees(bwidth)
+  buffer <- gBuffer(hull, width = bwidth)
+  return(buffer)
+}
+
+areaoverview <- as.data.frame(cbind(namelist, arealist, numberofpoints))
+areaoverview$numberofpoints <- as.numeric(areaoverview$numberofpoints)
+
+#We're going to create separate data frames and files for cleaned occurrence data of our species as well
+otherfolder <- "NA_Data/OccurrenceData/Cleaned/"
+ending <- ".csv"
+
+## Helianthus folder loop
+for (i in 1:48){
+  namelist[i] <- list[[i]]
+  name <- list[[i]]
+  df <- helianthus_points %>%
+    filter(Species == name)
+  file <- paste(otherfolder, name, ending, sep = "")
+  write.csv(df, file)
+}
+
+## Debilis subspecies folder loop
+for (i in 1:6){
+  namelist[i] <- deblist[[i]]
+  name <- deblist[[i]]
+  df <- debilis_points %>%
+    filter(Species == name)
+  file <- paste(otherfolder, name, ending, sep = "")
+  write.csv(df, file)
+}
+
+## Then we're going to evaluate our kept layers and get them ready for training layer creation
+# There are 2 methods for how it can be done either pull directly from your files
+
+keptlayers <- list.files(path= "PresentLayers/KeptLayers/", pattern = "*.asc", full.names = T)
+keptlayers <- mixedsort(sort(keptlayers))
+keptstack <- raster::stack(keptlayers)
+
+# Or you can stack the layers that are still loaded into the environment 
+
+keptstack <- stack(alt, bio1, bio4, bio5, bio6, bio12, bio13, bio14, bio15, BDOD, CARBON, CEC, CFVO, CLAY, NITRO, PHH20,SAND, SILT)
+
+# Then we will make a list of the layer names to use when naming our files
+# and this will be used by the function to create our species training layers
+layernames <- c("alt", "bio1", "bio4", "bio5", "bio6", "bio12", "bio13", "bio14", "bio15", "BDOD", "CARBON", "CEC", "CFVO", "CLAY", "NITRO", "PHH20","SAND", "SILT")
+
+newfold <- "NA_Data/Climate Data/PresentLayers/SpeciesLayers/"
+
+Slayer <- function(file, namefile){
+  hnb <- raster(file)
+  hnb <- as(hnb, "SpatialPolygons")
+  for (j in 1:18){
+    layername <- layernames[j]
+    layer <- keptstack[[j]]
+    layers <- mask(layer, hnb)
+    layer <- crop(layers, extent(hnb))
+    folder <- paste(newfold, namefile, layername, ".asc", sep = "")
+    writeRaster(layer, folder)
+  }
+}
+
+{
+  Agrestis <- Slayer("NA_Data/Climate Data/PresentLayers/buffer10percent/Helianthus_agrestis.asc", "Helianthus_agrestis/")
+  Angustifolius <- Slayer("NA_Data/Climate Data/PresentLayers/buffer10percent/Helianthus_angustifolius.asc", "Helianthus_angustifolius/")
+  Annuus <- Slayer("NA_Data/Climate Data/PresentLayers/buffer10percent/Helianthus_annuus.asc", "Helianthus_annuus/")
+  Anomalus <- Slayer("NA_Data/Climate Data/PresentLayers/buffer10percent/Helianthus_anomalus.asc", "Helianthus_anomalus/")
+  Arizonensis <- Slayer("NA_Data/Climate Data/PresentLayers/buffer10percent/Helianthus_arizonensis.asc", "Helianthus_arizonensis/")
+  Atrorubens <- Slayer("NA_Data/Climate Data/PresentLayers/buffer10percent/Helianthus_atrorubens.asc", "Helianthus_atrorubens/")
+  Californicus <- Slayer("NA_Data/Climate Data/PresentLayers/buffer10percent/Helianthus_californicus.asc", "Helianthus_californicus/")
+  Carnosus <- Slayer("NA_Data/Climate Data/PresentLayers/buffer10percent/Helianthus_carnosus.asc", "Helianthus_carnosus/")
+  Ciliaris <- Slayer("NA_Data/Climate Data/PresentLayers/buffer10percent/Helianthus_ciliaris.asc", "Helianthus_ciliaris/")
+  Cusickii <- Slayer("NA_Data/Climate Data/PresentLayers/buffer10percent/Helianthus_cusickii.asc", "Helianthus_cusickii/")
+  Debilis <- Slayer("NA_Data/Climate Data/PresentLayers/buffer10percent/Helianthus_debilis.asc", "Helianthus_debilis/")
+  Decapetalus <- Slayer("NA_Data/Climate Data/PresentLayers/buffer10percent/Helianthus_decapetalus.asc", "Helianthus_decapetalus/")
+  Deserticola <- Slayer("NA_Data/Climate Data/PresentLayers/buffer10percent/Helianthus_deserticola.asc", "Helianthus_deserticola/")
+  Divaricatus <- Slayer("NA_Data/Climate Data/PresentLayers/buffer10percent/Helianthus_divaricatus.asc", "Helianthus_divaricatus/")
+  Eggertii <- Slayer("NA_Data/Climate Data/PresentLayers/buffer10percent/Helianthus_eggertii.asc", "Helianthus_eggertii/")
+  Exilis <- Slayer("NA_Data/Climate Data/PresentLayers/buffer10percent/Helianthus_exilis.asc", "Helianthus_exilis/")
+  Floridanus <- Slayer("NA_Data/Climate Data/PresentLayers/buffer10percent/Helianthus_floridanus.asc", "Helianthus_floridanus/")
+  Giganteus <- Slayer("NA_Data/Climate Data/PresentLayers/buffer10percent/Helianthus_giganteus.asc", "Helianthus_giganteus/")
+  Glaucophyllus <- Slayer("NA_Data/Climate Data/PresentLayers/buffer10percent/Helianthus_glaucophyllus.asc", "Helianthus_glaucophyllus/")
+  Gracilentus <- Slayer("NA_Data/Climate Data/PresentLayers/buffer10percent/Helianthus_gracilentus.asc", "Helianthus_gracilentus/")
+  Grosseserratus <- Slayer("NA_Data/Climate Data/PresentLayers/buffer10percent/Helianthus_grosseserratus.asc", "Helianthus_grosseserratus/")
+  Heterophyllus <- Slayer("NA_Data/Climate Data/PresentLayers/buffer10percent/Helianthus_heterophyllus.asc", "Helianthus_heterophyllus/")
+  Hirsutus <- Slayer("NA_Data/Climate Data/PresentLayers/buffer10percent/Helianthus_hirsutus.asc", "Helianthus_hirsutus/")
+  Laciniatus <- Slayer("NA_Data/Climate Data/PresentLayers/buffer10percent/Helianthus_laciniatus.asc", "Helianthus_laciniatus/")
+  Laevigatus <- Slayer("NA_Data/Climate Data/PresentLayers/buffer10percent/Helianthus_laevigatus.asc", "Helianthus_laevigatus/")
+  Longifolius <- Slayer("NA_Data/Climate Data/PresentLayers/buffer10percent/Helianthus_longifolius.asc", "Helianthus_longifolius/")
+  Maximiliani <- Slayer("NA_Data/Climate Data/PresentLayers/buffer10percent/Helianthus_maximiliani.asc", "Helianthus_maximiliani/")
+  Mollis <- Slayer("NA_Data/Climate Data/PresentLayers/buffer10percent/Helianthus_mollis.asc", "Helianthus_mollis/")
+  Neglectus <- Slayer("NA_Data/Climate Data/PresentLayers/buffer10percent/Helianthus_neglectus.asc", "Helianthus_neglectus/")
+  Niveus <- Slayer("NA_Data/Climate Data/PresentLayers/buffer10percent/Helianthus_niveus.asc", "Helianthus_niveus/")
+  Nuttallii <- Slayer("NA_Data/Climate Data/PresentLayers/buffer10percent/Helianthus_nuttallii.asc", "Helianthus_nuttallii/")
+  Occidentalis <- Slayer("NA_Data/Climate Data/PresentLayers/buffer10percent/Helianthus_occidentalis.asc", "Helianthus_occidentalis/")
+  Paradoxus <- Slayer("NA_Data/Climate Data/PresentLayers/buffer10percent/Helianthus_paradoxus.asc", "Helianthus_paradoxus/")
+  Pauciflorus <- Slayer("NA_Data/Climate Data/PresentLayers/buffer10percent/Helianthus_pauciflorus.asc", "Helianthus_pauciflorus/")
+  Petiolaris <- Slayer("NA_Data/Climate Data/PresentLayers/buffer10percent/Helianthus_petiolaris.asc", "Helianthus_petiolaris/")
+  Porteri <- Slayer("NA_Data/Climate Data/PresentLayers/buffer10percent/Helianthus_porteri.asc", "Helianthus_porteri/")
+  Praecox <- Slayer("NA_Data/Climate Data/PresentLayers/buffer10percent/Helianthus_praecox.asc", "Helianthus_praecox/")
+  Pumilus <- Slayer("NA_Data/Climate Data/PresentLayers/buffer10percent/Helianthus_pumilus.asc", "Helianthus_pumilus/")
+  Radula <- Slayer("NA_Data/Climate Data/PresentLayers/buffer10percent/Helianthus_radula.asc", "Helianthus_radula/")
+  Resinosus <- Slayer("NA_Data/Climate Data/PresentLayers/buffer10percent/Helianthus_resinosus.asc", "Helianthus_resinosus/")
+  Salicifolius <- Slayer("NA_Data/Climate Data/PresentLayers/buffer10percent/Helianthus_salicifolius.asc", "Helianthus_salicifolius/")
+  Schweinitzii <- Slayer("NA_Data/Climate Data/PresentLayers/buffer10percent/Helianthus_schweinitzii.asc", "Helianthus_schweinitzii/")
+  Silphioides <- Slayer("NA_Data/Climate Data/PresentLayers/buffer10percent/Helianthus_silphioides.asc", "Helianthus_silphioides/")
+  Simulans <- Slayer("NA_Data/Climate Data/PresentLayers/buffer10percent/Helianthus_simulans.asc", "Helianthus_simulans/")
+  Smithii <- Slayer("NA_Data/Climate Data/PresentLayers/buffer10percent/Helianthus_smithii.asc", "Helianthus_smithii/")
+  Tuberosus <- Slayer("NA_Data/Climate Data/PresentLayers/buffer10percent/Helianthus_tuberosus.asc", "Helianthus_tuberosus/")
+  Winteri <- Slayer("NA_Data/Climate Data/PresentLayers/buffer10percent/Helianthus_winteri.asc", "Helianthus_winteri/")
+}
+
+#################################################################################################################################################
+Troubleshooting:
+
+#Sometimes it is a bit easier to run species with smaller data sets first then the larger ones
+## If the error of "cannot allocate vector of x size" then check what layers were made and re-run the function
+
+
+
