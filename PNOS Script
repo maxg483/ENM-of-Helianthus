@@ -1,0 +1,39 @@
+
+#THIS HAS NOT BEEN RAN YET AND WILL STILL BE EDITED 
+
+
+## Script based on https://github.com/ryanafolk/pno_calc
+## Original Script by ML Gaynor
+## Adapted by Max Gebhart
+
+for f in ./*.csv; do
+f=$(sed 's/.csv//g' <<< $f)
+echo ${f}
+mkdir ${f}_model2
+java -mx2000m -jar maxent.jar
+nowarnings noprefixes responsecurves jackknife
+"outputdirectory=./${f}_model2" "samplesfile=./${f}.csv"
+"projectionlayers=/Users/maxge/Downloads/BOTANYWORKSHOP/BOTANYWORKSHOP/Helianthus/Helianthus_Modeling/NA_Data/Climate Data/PresentLayers/KeptLayers/"
+"environmentallayers=/Users/shellygaynor/Dropbox/Graduate_School/Projects/Diapensiaceae/Biogeography_ENM/ENM/input/layers/${f}"
+randomseed noaskoverwrite randomtestpoints=25 replicates=10
+replicatetype=bootstrap
+noextrapolate maximumiterations=5000 allowpartialdata autorun
+done
+
+which python3
+# /usr/local/bin/python3
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
